@@ -39,7 +39,7 @@ local function create_float_win(choices, opts)
 	end
 
 	-- Create float window
-	local opts = {
+	local win_opts = {
 		relative =  opts.relative or 'cursor', 
 		anchor =  opts.anchor or nil, 
 		width =  width, 
@@ -66,11 +66,11 @@ local function create_float_win(choices, opts)
 	local shadow_win = -1
 	pcall(function()
 		local Border = require("plenary.window.border")
-		shadow_win = vim.api.nvim_open_win(buf, false, opts)
-		Border:new(buf, shadow_win, opts, border_opts)
+		shadow_win = vim.api.nvim_open_win(buf, false, win_opts)
+		Border:new(buf, shadow_win, win_opts, border_opts)
 	end)
 
-	local win = vim.api.nvim_open_win(buf, true, opts)
+	local win = vim.api.nvim_open_win(buf, true, win_opts)
 	vim.api.nvim_win_set_option(win, "cursorline", true)
 	vim.api.nvim_win_set_option(win, "winhl", "CursorLine:" .. (opts.hl_group or "TermCursor"))
 
@@ -132,6 +132,10 @@ function M.open(choices, opts)
 		["opts.on_close"] = { opts.on_close, "f", true },
 		["opts.on_submit"] = { opts.on_submit, "f", true },
 	}
+	
+	-- Leave a highlight where the cursor was
+	local old_buf = vim.api.nvim_get_current_buf()
+	local ns_cursor = M.display_cursor()
 
 	-- Display floating with text
 	local buf, win, shadow_win = create_float_win(choices, opts)
@@ -146,6 +150,8 @@ function M.open(choices, opts)
 		choices = choices,
 		on_close = opts.on_close,
 		on_submit = opts.on_submit,
+		ns_cursor = ns_cursor,
+		old_buf = old_buf,
 	}
 
 	-- Setup keymapping for floating window
@@ -158,33 +164,70 @@ end
 --@private
 -- Called when window closes or loses focus via keymapping or autocmd
 function M.close()
-	if vim.api.nvim_win_is_valid(focused.win) then
-		vim.api.nvim_win_close(focused.win, true)
-	end
-
-	if vim.api.nvim_win_is_valid(focused.shadow_win) then
-		vim.api.nvim_win_close(focused.shadow_win, true)
-	end
+	M.deinit()
 
 	if focused.on_close then
 		focused.on_close()
 	end
+
+	focused = {}
 end
 
 --@private
 -- Called when user pressed <CR>
 function M.submit()
 	local chosen = vim.fn.line(".")
-	if vim.api.nvim_win_is_valid(focused.win) then
-		vim.api.nvim_win_close(focused.win, true)
-	end
-
-	if vim.api.nvim_win_is_valid(focused.shadow_win) then
-		vim.api.nvim_win_close(focused.shadow_win, true)
-	end
+	M.deinit()
 
 	if focused.on_submit then
 		focused.on_submit(chosen)
+	end
+
+	focused = {}
+end
+
+--@private
+-- Deinitialize everything
+function M.deinit()
+	if focused.win and vim.api.nvim_win_is_valid(focused.win) then
+		vim.api.nvim_win_close(focused.win, true)
+	end
+
+	if focused.shadow_win and vim.api.nvim_win_is_valid(focused.shadow_win) then
+		vim.api.nvim_win_close(focused.shadow_win, true)
+	end
+
+	M.hide_cursor(focused.old_buf, focused.ns_cursor)
+end
+
+
+--@private
+-- Draw cursor as a highlight
+function M.display_cursor()
+	-- get cursor position
+	local _, row, col, _ = unpack(vim.fn.getpos("."))
+
+	-- get next char byte position
+	local line = vim.api.nvim_get_current_line()
+	local c, _ = vim.str_utfindex(line, col-1)
+	local len = vim.str_utfindex(line)
+	local next_col
+	if c == len then
+		next_col = -1
+	else
+		next_col = vim.str_byteindex(line, c+1)
+	end
+
+	-- add hightlight to buffer
+	local ns_cursor = vim.api.nvim_buf_add_highlight(0, 0, "TermCursor", row-1, col-1, next_col)
+	return ns_cursor
+end
+
+--@private
+-- Clear cursor highlight
+function M.hide_cursor(buf, ns_cursor)
+	if ns_cursor then
+		vim.api.nvim_buf_clear_namespace(buf, ns_cursor, 0, -1)
 	end
 end
 
