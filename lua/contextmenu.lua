@@ -164,19 +164,25 @@ end
 --@private
 -- Called when window closes or loses focus via keymapping or autocmd
 function M.close()
-	M.deinit()
+	if not focused.submitted then
+		M.deinit()
 
-	if focused.on_close then
-		focused.on_close()
+		if focused.on_close then
+			focused.on_close()
+		end
+
+		focused = {}
 	end
-
-	focused = {}
 end
 
 --@private
 -- Called when user pressed <CR>
 function M.submit()
 	local chosen = vim.fn.line(".")
+
+	-- nasty flag to avoid triggering on_close
+	focused.submitted = true 
+
 	M.deinit()
 
 	if focused.on_submit then
