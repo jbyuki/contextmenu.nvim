@@ -3,6 +3,8 @@ contextmenu.nvim
 
 A context menu creation toolkit for Neovim written in Lua.
 
+Similar to [popup_menu()](https://vimhelp.org/popup.txt.html#popup_menu%28%29) but with floating window.
+
 [![Untitled.png](https://i.postimg.cc/h4xbjysf/Untitled.png)](https://postimg.cc/YjrmDxJH)
 
 ### Features
@@ -29,12 +31,15 @@ Plug 'nvim-lua/plenary.nvim'
 
 ```
 local choices = {"choice 1", choice 2"}
-require"contextmenu".open(choices,
-	on_submit = function(chosen) 
+require"contextmenu".open(choices, {
+	callback = function(chosen) 
 		print("Final choice " .. choices[chosen])
 	end
-)
+})
 ```
+
+For options see [popup-usage](https://vimhelp.org/popup.txt.html#popup-usage).
+Arguments are (very) partially implemented.
 
 ### Help
 

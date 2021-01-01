@@ -5,11 +5,11 @@
 -- 
 -- Usage:
 -- 		local choices = {"choice 1", choice 2"}
--- 		require"contextmenu".open(choices,
--- 			on_submit = function(chosen) 
+-- 		require"contextmenu".open(choices, {
+-- 			callback = function(chosen) 
 -- 				print("Final choice " .. choices[chosen])
 -- 			end
--- 		)
+-- 		})
 local M = {}
 
 --@private
@@ -24,68 +24,92 @@ local function create_float_win(choices, opts)
 	local width = 0
 	for _, o in ipairs(choices) do
 		local w = vim.api.nvim_strwidth(o)
-		width = math.max(width, (opts.margin_left or 0) + w + (opts.margin_right or 0))
+		width = math.max(width, opts.padding[4] + w + opts.padding[2])
 	end
 
-	if opts.max_width then
-		width = math.min(width, opts.max_width)
+	if opts.maxwidth then
+		width = math.min(width, opts.maxwidth)
 	end
 
 	-- Compute height
 	local height = #choices
 
-	if opts.max_height then
-		height = math.min(height, opts.max_height)
+	if opts.maxheight then
+		height = math.min(height, opts.maxheight)
+	end
+
+	-- Determine float anchor
+	local anchor
+	if opts.pos == "topleft" then anchor = "NW"
+	elseif opts.pos == "topright" then anchor = "NE"
+	elseif opts.pos == "botleft" then anchor = "SW"
+	elseif opts.pos == "botright" then anchor = "SE"
+	end
+
+	-- Determine float position
+	-- Currently does not mix between cursor relative
+	-- and editor relative positions
+	local relative, col, row
+
+	if string.match(opts.line, "cursor") then
+		relative = "cursor"
+		row = M.parse_line_and_col(opts.line)
+	else
+		relative = "editor"
+		row = opts.line
+	end
+
+	if string.match(opts.col, "cursor") then
+		col = M.parse_line_and_col(opts.col)
+	else
+		col = opts.line
 	end
 
 	-- Create float window
 	local win_opts = {
-		relative =  opts.relative or 'cursor', 
-		anchor =  opts.anchor or nil, 
+		relative =  relative,
+		anchor = anchor,
 		width =  width, 
 		height = height, 
-		col = opts.col or 2,
-		row = opts.row or 2, 
-		style =  opts.style or 'minimal',
+		col = col + opts.border,
+		row = row + opts.border, 
+		style =  'minimal',
 	}
 
 	local border_opts = {
-		title = opts.title or "",
-		width = 1,
-		topleft  = '╭',
-		topright = '╮',
-		top      = '─',
-		left     = '│',
-		right    = '│',
-		botleft  = '╰',
-		botright = '╯',
-		bot      = '─',
+		title = opts.title,
+		width = opts.border,
+		top      = opts.borderchars[1],
+		right    = opts.borderchars[2],
+		bot      = opts.borderchars[3],
+		left     = opts.borderchars[4],
+		topleft  = opts.borderchars[5],
+		topright = opts.borderchars[6],
+		botright = opts.borderchars[7],
+		botleft  = opts.borderchars[8],
 	}
 
 	-- use borders if plenary is installed
-	local shadow_win = -1
+	local win = vim.api.nvim_open_win(buf, false, win_opts)
 	pcall(function()
 		local Border = require("plenary.window.border")
-		shadow_win = vim.api.nvim_open_win(buf, false, win_opts)
-		Border:new(buf, shadow_win, win_opts, border_opts)
+		Border:new(buf, win, win_opts, border_opts)
 	end)
 
-	local win = vim.api.nvim_open_win(buf, true, win_opts)
 	vim.api.nvim_win_set_option(win, "cursorline", true)
-	vim.api.nvim_win_set_option(win, "winhl", "CursorLine:" .. (opts.hl_group or "TermCursor"))
+	vim.api.nvim_win_set_option(win, "winhl", "CursorLine:" .. opts.highlight)
+	vim.api.nvim_set_current_win(win)
 
-	return buf, win, shadow_win
+	return buf, win
 end
 
 --@private
 -- Adds padding on the left to every elements
--- according to opts.margin_left
+-- according to opts.padding[2] (right)
 local function pad_text(choices, opts)
-	if opts.margin_left then
-		for i=1,#choices do
-			for _=1,opts.margin_left do
-				choices[i] = " " .. choices[i]
-			end
+	for i=1,#choices do
+		for _=1,opts.padding[2] do
+			choices[i] = " " .. choices[i]
 		end
 	end
 end
@@ -98,18 +122,6 @@ local focused = {}
 --
 --@param choices a table of strings
 --@param opts dictionary with fields
---  	- on_close callback, no argument, called when closed or lose focus
---  	- on_submit callback, 1 argument, index of chosen element (1-based)
---		- hl_group highlight group for the selected line, preferably the cursor highlight group
---  	- max_width maximum width for context menu (including margin)
---  	- max_height maximum height for context menu
---  	- margin_left adds spaces to the left
---  	- margin_right adds spaces to the left
---  	- relative relative argument for |nvim_open_win|
---  	- title context menu title
---  	- anchor anchor argument for |nvim_open_win|
---  	- row row argument for |nvim_open_win|
---  	- col col argument for |nvim_open_win|
 function M.open(choices, opts)
 	vim.validate {
 		choices = {choices, "t"},
@@ -118,38 +130,86 @@ function M.open(choices, opts)
 
 	opts = opts or {}
 
+	local NA = function(arg) return not arg end 
+
 	vim.validate {
-		["opts.hl_group"] = { opts.hl_group, "s", true },
-		["opts.max_width"] = { opts.max_width, "n", true },
-		["opts.max_height"] = { opts.max_height, "n", true },
-		["opts.margin_left"] = { opts.margin_left, "n", true },
-		["opts.margin_right"] = { opts.margin_right, "n", true },
-		["opts.relative"] = { opts.relative, "s", true },
-		["opts.anchor"] = { opts.anchor, "n", true },
-		["opts.row"] = { opts.row, "n", true },
-		["opts.col"] = { opts.col, "n", true },
+		["opts.line"] = { opts.line, 
+		function(arg) 
+			return not arg or type(arg) == "number" or type(arg) == "string"
+		end, "opts.line must be a number, a string or nil" },
+
+		["opts.col"] = { opts.col, 
+		function(arg) 
+			return not arg or type(arg) == "number" or type(arg) == "string"
+		end, "opts.col must be a number, a string or nil" },
+
+		["opts.pos"] = { opts.pos, "s", true },
+
+		["opts.maxheight"] = { opts.maxheight, "n", true },
+		["opts.minheight"] = { opts.minheight, "n", true },
+		["opts.maxwidth"] = { opts.maxwidth, "n", true },
+		["opts.minwidth"] = { opts.minwidth, "n", true },
 		["opts.title"] = { opts.title, "s", true },
-		["opts.on_close"] = { opts.on_close, "f", true },
-		["opts.on_submit"] = { opts.on_submit, "f", true },
+		["opts.highlight"] = { opts.hightlight, "s", true },
+		["opts.padding"] = { opts.padding, "t", true },
+		["opts.border"] = { opts.border, "n", true },
+		["opts.borderchars"] = { opts.borderchars, "t", true },
+		["opts.time"] = { opts.time, "n", true },
+		["opts.callback"] = { opts.callback, "f", true },
+
+		-- not supported atm
+		["opts.firstline"] = { opts.firstline, NA, true },
+		["opts.wrap"] = { opts.wrap, NA, true },
+		["opts.borderhighlight"] = { opts.borderhighlight, NA, "not supported" },
+		["opts.posinvert"] = { opts.posinvert, NA, "not supported!" },
+		["opts.textprop"] = { opts.textprop, NA, "not supported!" },
+		["opts.fixed"] = { opts.fixed, NA, "not supported!" },
+		["opts.flip"] = { opts.flip, NA, "not supported!" },
+		["opts.hidden"] = { opts.hidden, NA, "not supported!" },
+		["opts.tabpage"] = { opts.tabpage, NA, "not supported!" },
+		["opts.drag"] = { opts.drag, NA, "not supported!" },
+		["opts.resize"] = { opts.resize, NA, "not supported!" },
+		["opts.close"] = { opts.close, NA, "not supported!" },
+		["opts.scrollbar"] = { opts.scrollbar, NA, "not supported!" },
+		["opts.scrollbarhighlight"] = { opts.scrollbarhighlight, NA, "not supported!" },
+		["opts.thumbhighlight"] = { opts.thumbhighlight, NA, "not supported!" },
+		["opts.zindex"] = { opts.zindex, NA, "not supported!" },
+		["opts.mask"] = { opts.mask, NA, "not supported!" },
+		["opts.moved"] = { opts.moved, NA, "not supported!" },
+		["opts.cursorline"] = { opts.cursorline, NA, "not supported!" },
+		["opts.filter"] = { opts.filter, NA, "not supported!" },
+		["opts.mapping"] = { opts.mapping, NA, "not supported!" },
+		["opts.filtermode"] = { opts.filtermode, NA, "not supported!" },
 	}
-	
+
+	if padding and (padding[1] ~= 0 or padding[3] ~= 0) then
+		error("top/bot border not supported!")
+	end
+
+	-- set default settings
+	opts.padding = opts.padding or { 0, 1, 0, 1}
+	opts.borderchars = M.fill_borderchars(borderchars)
+	opts.border = opts.border or 1
+	opts.highlight = opts.highlight or "TermCursor"
+	opts.title = opts.title or ""
+	opts.line = opts.line or "cursor+1"
+	opts.col = opts.col or "cursor+1"
+
 	-- Leave a highlight where the cursor was
 	local old_buf = vim.api.nvim_get_current_buf()
 	local ns_cursor = M.display_cursor()
 
 	-- Display floating with text
-	local buf, win, shadow_win = create_float_win(choices, opts)
+	local buf, win = create_float_win(choices, opts)
 
 	pad_text(choices, opts)
 	vim.api.nvim_buf_set_lines(buf, 0, -1, true, choices)
 
 	focused = {
 		win = win,
-		shadow_win = shadow_win,
 		buf = buf,
 		choices = choices,
-		on_close = opts.on_close,
-		on_submit = opts.on_submit,
+		callback = opts.callback,
 		ns_cursor = ns_cursor,
 		old_buf = old_buf,
 	}
@@ -159,6 +219,29 @@ function M.open(choices, opts)
 	vim.api.nvim_buf_set_keymap(buf, 'n', '<CR>', '<cmd>lua require"contextmenu".submit()<CR>', {noremap = true})
 
 	vim.api.nvim_command("autocmd WinLeave * ++once lua require'contextmenu'.close()")
+end
+
+--@private
+-- Fills the borderchars array completly
+-- according to what's received
+function M.fill_borderchars(borderchars)
+	if not borderchars then
+		borderchars = { '─', '│', '─', '│', '╭', '╮', '╯', '╰'}
+	elseif #borderchars == 1 then
+		local a = borderchars[1]
+		borderchars = { a, a, a, a,    a, a, a, a }
+	elseif #borderchars == 2 then
+		local b = borderchars[1]
+		local c = borderchars[2]
+		borderchars = { b, b, b, b,    c, c, c, c }
+	elseif #borderchars == 4 then
+		local a = borderchars[1]
+		local b = borderchars[2]
+		local c = borderchars[3]
+		local d = borderchars[4]
+		borderchars = { a, b, c, d,    '+', '+', '+', '+' }
+	end
+	return borderchars
 end
 
 --@private
@@ -185,8 +268,8 @@ function M.submit()
 
 	M.deinit()
 
-	if focused.on_submit then
-		focused.on_submit(chosen)
+	if focused.callback then
+		focused.callback(chosen)
 	end
 
 	focused = {}
@@ -197,10 +280,6 @@ end
 function M.deinit()
 	if focused.win and vim.api.nvim_win_is_valid(focused.win) then
 		vim.api.nvim_win_close(focused.win, true)
-	end
-
-	if focused.shadow_win and vim.api.nvim_win_is_valid(focused.shadow_win) then
-		vim.api.nvim_win_close(focused.shadow_win, true)
 	end
 
 	M.hide_cursor(focused.old_buf, focused.ns_cursor)
@@ -235,6 +314,15 @@ function M.hide_cursor(buf, ns_cursor)
 	if ns_cursor then
 		vim.api.nvim_buf_clear_namespace(buf, ns_cursor, 0, -1)
 	end
+end
+
+--@private
+-- Extract relative number after "cursor" in row and
+-- line arguments
+function M.parse_line_and_col(str)
+	local rel = string.match(str, "cursor([+%-]%d+)")
+	rel = tonumber(rel)
+	return rel
 end
 
 return M
