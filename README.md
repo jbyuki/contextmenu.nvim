@@ -17,19 +17,19 @@ Similar to [popup_menu()](https://vimhelp.org/popup.txt.html#popup_menu%28%29) b
 
 ### Installation
 
-```
+```vim
 Plug 'jbyuki/contextmenu.nvim'
 ```
 
 For border support:
 
-```
+```vim
 Plug 'nvim-lua/plenary.nvim'
 ```
 
 ### Usage
 
-```
+```lua
 local choices = {"choice 1", choice 2"}
 require"contextmenu".open(choices, {
 	callback = function(chosen) 
