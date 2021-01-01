@@ -30,7 +30,7 @@ Plug 'nvim-lua/plenary.nvim'
 ### Usage
 
 ```lua
-local choices = {"choice 1", choice 2"}
+local choices = {"choice 1", "choice 2"}
 require"contextmenu".open(choices, {
 	callback = function(chosen) 
 		print("Final choice " .. choices[chosen])
