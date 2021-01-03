@@ -1,6 +1,8 @@
 contextmenu.nvim
 ----------------
 
+**Merging into [popup.nvim](https://github.com/nvim-lua/popup.nvim) !**
+
 A context menu creation toolkit for Neovim written in Lua.
 
 Similar to [popup_menu()](https://vimhelp.org/popup.txt.html#popup_menu%28%29) but with floating window.
